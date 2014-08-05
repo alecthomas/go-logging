@@ -12,7 +12,7 @@ func TestMultiLogger(t *testing.T) {
 	SetBackend(MultiLogger(log1, log2))
 
 	log := MustGetLogger("test")
-	log.Debug("log")
+	log.Debugf("log")
 
 	if "log" != MemoryRecordN(log1, 0).Formatted(0) {
 		t.Errorf("log1: %v", MemoryRecordN(log1, 0).Formatted(0))
@@ -34,14 +34,14 @@ func TestMultiLoggerLevel(t *testing.T) {
 	SetBackend(multi)
 
 	log := MustGetLogger("test")
-	log.Notice("log")
+	log.Noticef("log")
 
 	if nil != MemoryRecordN(log1, 0) || nil != MemoryRecordN(log2, 0) {
 		t.Errorf("unexpected log record")
 	}
 
 	leveled1.SetLevel(DEBUG, "test")
-	log.Notice("log")
+	log.Noticef("log")
 	if "log" != MemoryRecordN(log1, 0).Formatted(0) {
 		t.Errorf("log1 not receieved")
 	}

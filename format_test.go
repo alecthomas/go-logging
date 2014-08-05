@@ -19,7 +19,7 @@ func TestFormat(t *testing.T) {
 	SetFormatter(f)
 
 	log := MustGetLogger("module")
-	log.Debug("hello")
+	log.Debugf("hello")
 
 	line := MemoryRecordN(backend, 0).Formatted(0)
 	if "format_test.go:24 1970-01-01T00:00:00 D 0001 module hello" != line {
@@ -34,7 +34,7 @@ func BenchmarkStringFormatter(b *testing.B) {
 	backend := InitForTesting(DEBUG)
 	buf := &bytes.Buffer{}
 	log := MustGetLogger("module")
-	log.Debug("")
+	log.Debugf("")
 	record := MemoryRecordN(backend, 0)
 
 	b.ResetTimer()

@@ -17,7 +17,7 @@ func TestLogCalldepth(t *testing.T) {
 	SetFormatter(MustStringFormatter("%{shortfile} %{level} %{message}"))
 
 	log := MustGetLogger("test")
-	log.Info("test filename")
+	log.Infof("test filename")
 
 	parts := strings.SplitN(buf.String(), " ", 2)
 
@@ -90,6 +90,6 @@ func RunLogBenchmark(b *testing.B) {
 
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		log.Debug("log line for %d and this is rectified: %s", i, password)
+		log.Debugf("log line for %d and this is rectified: %s", i, password)
 	}
 }
