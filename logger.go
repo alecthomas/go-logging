@@ -79,7 +79,18 @@ func (r *Record) Message() string {
 }
 
 type Logger struct {
-	Module string
+	Module      string
+	backend     LeveledBackend
+	haveBackend bool
+
+	// ExtraCallDepth can be used to add additional call depth when getting the
+	// calling function. This is normally used when wrapping a logger.
+	ExtraCalldepth int
+}
+
+func (l *Logger) SetBackend(backend LeveledBackend) {
+	l.backend = backend
+	l.haveBackend = true
 }
 
 // TODO call NewLogger and remove MustGetLogger?
@@ -110,29 +121,16 @@ func Reset() {
 	timeNow = time.Now
 }
 
-// InitForTesting is a convenient method when using logging in a test. Once
-// called, the time will be frozen to January 1, 1970 UTC.
-func InitForTesting(level Level) *MemoryBackend {
-	Reset()
-
-	memoryBackend := NewMemoryBackend(10240)
-
-	leveledBackend := AddModuleLevel(memoryBackend)
-	leveledBackend.SetLevel(level, "")
-	SetBackend(leveledBackend)
-
-	timeNow = func() time.Time {
-		return time.Unix(0, 0).UTC()
-	}
-	return memoryBackend
-}
-
 // IsEnabledFor returns true if the logger is enabled for the given level.
 func (l *Logger) IsEnabledFor(level Level) bool {
 	return defaultBackend.IsEnabledFor(level, l.Module)
 }
 
 func (l *Logger) log(lvl Level, format string, args ...interface{}) {
+	if !l.IsEnabledFor(lvl) {
+		return
+	}
+
 	// Create the logging record and pass it in to the backend
 	record := &Record{
 		Id:     atomic.AddUint64(&sequenceNo, 1),
@@ -148,7 +146,14 @@ func (l *Logger) log(lvl Level, format string, args ...interface{}) {
 
 	// calldepth=2 brings the stack up to the caller of the level
 	// methods, Info(), Fatal(), etc.
-	defaultBackend.Log(lvl, 2, record)
+	// ExtraCallDepth allows this to be extended further up the stack in case we
+	// are wrapping these methods, eg. to expose them package level
+	if l.haveBackend {
+		l.backend.Log(lvl, 2+l.ExtraCalldepth, record)
+		return
+	}
+
+	defaultBackend.Log(lvl, 2+l.ExtraCalldepth, record)
 }
 
 // Fatal is equivalent to l.Critical(fmt.Sprint()) followed by a call to os.Exit(1).

@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -33,6 +35,11 @@ const (
 	fmtVerbMessage
 	fmtVerbLongfile
 	fmtVerbShortfile
+	fmtVerbLongpkg
+	fmtVerbShortpkg
+	fmtVerbLongfunc
+	fmtVerbShortfunc
+	fmtVerbLevelColor
 
 	// Keep last, there are no match for these below.
 	fmtVerbUnknown
@@ -49,6 +56,11 @@ var fmtVerbs = []string{
 	"message",
 	"longfile",
 	"shortfile",
+	"longpkg",
+	"shortpkg",
+	"longfunc",
+	"shortfunc",
+	"color",
 }
 
 const rfc3339Milli = "2006-01-02T15:04:05.999Z07:00"
@@ -63,6 +75,11 @@ var defaultVerbsLayout = []string{
 	"s",
 	"s",
 	"s",
+	"s",
+	"s",
+	"s",
+	"s",
+	"",
 }
 
 var (
@@ -142,6 +159,7 @@ type stringFormatter struct {
 //     %{message}   Message (string)
 //     %{longfile}  Full file name and line number: /a/b/c/d.go:23
 //     %{shortfile} Final file name element and line number: d.go:23
+//     %{color}     ANSI color based on log level
 //
 // For normal types, the output can be customized by using the 'verbs' defined
 // in the fmt package, eg. '%{id:04d}' to make the id output be '%04d' as the
@@ -149,6 +167,23 @@ type stringFormatter struct {
 //
 // For time.Time, use the same layout as time.Format to change the time format
 // when output, eg "2006-01-02T15:04:05.999Z-07:00".
+//
+// For the 'color' verb, the output can be adjusted to either use bold colors,
+// i.e., '%{color:bold}' or to reset the ANSI attributes, i.e.,
+// '%{color:reset}' Note that if you use the color verb explicitly, be sure to
+// reset it or else the color state will persist past your log message.  e.g.,
+// "%{color:bold}%{time:15:04:05} %{level:-8s}%{color:reset} %{message}" will
+// just colorize the time and level, leaving the message uncolored.
+//
+// There's also a couple of experimental 'verbs'. These are exposed to get
+// feedback and needs a bit of tinkering. Hence, they might change in the
+// future.
+//
+// Experimental:
+//     %{longpkg}   Full package path, eg. github.com/go-logging
+//     %{shortpkg}  Base package path, eg. go-logging
+//     %{longfunc}  Full function name, eg. littleEndian.PutUint32
+//     %{shortfunc} Base function name, eg. PutUint32
 func NewStringFormatter(format string) (*stringFormatter, error) {
 	var fmter = &stringFormatter{}
 
@@ -173,12 +208,12 @@ func NewStringFormatter(format string) (*stringFormatter, error) {
 		}
 
 		// Handle layout customizations or use the default. If this is not for the
-		// time formatting, we need to prefix with %.
+		// time or color formatting, we need to prefix with %.
 		layout := defaultVerbsLayout[verb]
 		if m[4] != -1 {
 			layout = format[m[4]:m[5]]
 		}
-		if verb != fmtVerbTime {
+		if verb != fmtVerbTime && verb != fmtVerbLevelColor {
 			layout = "%" + layout
 		}
 
@@ -206,8 +241,6 @@ func NewStringFormatter(format string) (*stringFormatter, error) {
 		return nil, err
 	}
 
-	formatter.def = fmter
-
 	return fmter, nil
 }
 
@@ -231,6 +264,14 @@ func (f *stringFormatter) Format(calldepth int, r *Record, output io.Writer) err
 			output.Write([]byte(part.layout))
 		} else if part.verb == fmtVerbTime {
 			output.Write([]byte(r.Time.Format(part.layout)))
+		} else if part.verb == fmtVerbLevelColor {
+			if part.layout == "bold" {
+				output.Write([]byte(boldcolors[r.Level]))
+			} else if part.layout == "reset" {
+				output.Write([]byte("\033[0m"))
+		} else {
+				output.Write([]byte(colors[r.Level]))
+			}
 		} else {
 			var v interface{}
 			switch part.verb {
@@ -261,6 +302,15 @@ func (f *stringFormatter) Format(calldepth int, r *Record, output io.Writer) err
 					file = filepath.Base(file)
 				}
 				v = fmt.Sprintf("%s:%d", file, line)
+			case fmtVerbLongfunc, fmtVerbShortfunc,
+				fmtVerbLongpkg, fmtVerbShortpkg:
+				// TODO cache pc
+				v = "???"
+				if pc, _, _, ok := runtime.Caller(calldepth + 1); ok {
+					if f := runtime.FuncForPC(pc); f != nil {
+						v = formatFuncName(part.verb, f.Name())
+					}
+				}
 			default:
 				panic("unhandled format part")
 			}
@@ -268,4 +318,51 @@ func (f *stringFormatter) Format(calldepth int, r *Record, output io.Writer) err
 		}
 	}
 	return nil
+}
+
+// formatFuncName tries to extract certain part of the runtime formatted
+// function name to some pre-defined variation.
+//
+// This function is known to not work properly if the package path or name
+// contains a dot.
+func formatFuncName(v fmtVerb, f string) string {
+	i := strings.LastIndex(f, "/")
+	j := strings.Index(f[i+1:], ".")
+	if j < 1 {
+		return "???"
+	}
+	pkg, fun := f[:i+j+1], f[i+j+2:]
+	switch v {
+	case fmtVerbLongpkg:
+		return pkg
+	case fmtVerbShortpkg:
+		return path.Base(pkg)
+	case fmtVerbLongfunc:
+		return fun
+	case fmtVerbShortfunc:
+		i = strings.LastIndex(fun, ".")
+		return fun[i+1:]
+	}
+	panic("unexpected func formatter")
+}
+
+// backendFormatter combines a backend with a specific formatter making it
+// possible to have different log formats for different backends.
+type backendFormatter struct {
+	b Backend
+	f Formatter
+}
+
+// NewBackendFormatter creates a new backend which makes all records that
+// passes through it beeing formatted by the specific formatter.
+func NewBackendFormatter(b Backend, f Formatter) *backendFormatter {
+	return &backendFormatter{b, f}
+}
+
+// Log implements the Log function required by the Backend interface.
+func (bf *backendFormatter) Log(level Level, calldepth int, r *Record) error {
+	// Make a shallow copy of the record and replace any formatter
+	r2 := *r
+	r2.formatter = bf.f
+	return bf.b.Log(level, calldepth+1, &r2)
 }
