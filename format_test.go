@@ -28,7 +28,7 @@ func TestFormat(t *testing.T) {
 }
 
 func logAndGetLine(backend *MemoryBackend) string {
-	MustGetLogger("foo").Debug("hello")
+	MustGetLogger("foo").Debugf("hello")
 	return MemoryRecordN(backend, 0).Formatted(1)
 }
 
@@ -155,7 +155,7 @@ func TestBackendFormatter(t *testing.T) {
 	SetBackend(b1, bf)
 
 	log := MustGetLogger("module")
-	log.Info("foo")
+	log.Infof("foo")
 	if "foo" != getLastLine(b1) {
 		t.Errorf("Unexpected line: %s", getLastLine(b1))
 	}

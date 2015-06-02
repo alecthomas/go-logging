@@ -42,7 +42,7 @@ func TestPrivateBackend(t *testing.T) {
 	lvlBackend := AddModuleLevel(privateBackend)
 	lvlBackend.SetLevel(DEBUG, "")
 	log.SetBackend(lvlBackend)
-	log.Debug("to private backend")
+	log.Debugf("to private backend")
 	if stdBackend.size > 0 {
 		t.Errorf("something in stdBackend, size of backend: %d", stdBackend.size)
 	}

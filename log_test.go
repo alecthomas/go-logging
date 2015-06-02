@@ -113,6 +113,6 @@ func RunLogBenchmarkFixedString(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		log.Debug("some random fixed text")
+		log.Debugf("some random fixed text")
 	}
 }

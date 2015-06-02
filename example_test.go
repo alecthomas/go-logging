@@ -30,8 +30,8 @@ func Example() {
 	// Set the backends to be used and the default level.
 	SetBackend(backend1, backend2Leveled)
 
-	log.Debug("debug %s", "arg")
-	log.Error("error")
+	log.Debugf("debug %s", "arg")
+	log.Errorf("error")
 
 	// Output:
 	// debug arg
